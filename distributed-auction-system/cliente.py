@@ -38,7 +38,9 @@ def main():
     hilo = None
     try:
         nombre = input("Ingresa tu nombre: ").strip()
-        with Pyro4.Proxy("PYRONAME:subastas.central") as subasta:
+        # Consultar el Name Server indicado sin buscar otros equipos por broadcast.
+        direccion = f"PYRONAME:subastas.central@{Pyro4.config.NS_HOST}:{Pyro4.config.NS_PORT}"
+        with Pyro4.Proxy(direccion) as subasta:
             subasta._pyroTimeout = 3
             subasta._pyroBind()
             estado = subasta.registrar_cliente(nombre)
@@ -64,8 +66,9 @@ def main():
                     print(f"Oferta rechazada: {error}")
     except ValueError as error:
         print(error)
-    except (Pyro4.errors.CommunicationError, Pyro4.errors.NamingError):
+    except (Pyro4.errors.CommunicationError, Pyro4.errors.NamingError) as error:
         print("No se pudo conectar. Mantén abiertos el servidor de nombres y servidor.py.")
+        print(f"Detalle: {error}")
     except (EOFError, KeyboardInterrupt):
         print("\nCliente cerrado.")
     finally:

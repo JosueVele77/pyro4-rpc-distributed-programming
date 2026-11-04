@@ -71,15 +71,19 @@ class Subasta:
 
 def main():
     try:
-        with Pyro4.Daemon() as servidor, Pyro4.locateNS() as registro:
+        with Pyro4.Daemon() as servidor, Pyro4.locateNS(
+            host=Pyro4.config.NS_HOST, port=Pyro4.config.NS_PORT
+        ) as registro:
             # Una sola instancia comparte el estado entre todos los clientes.
             subasta = Subasta("Computadora portátil", precio_base=100, duracion=100)
             uri = servidor.register(subasta)
             registro.register("subastas.central", uri)
+            print(f"Dirección del servicio: {uri}", flush=True)
             print("Servidor listo: subastas.central. Duración: 100 segundos.", flush=True)
             servidor.requestLoop()
-    except (Pyro4.errors.NamingError, Pyro4.errors.CommunicationError):
+    except (Pyro4.errors.NamingError, Pyro4.errors.CommunicationError) as error:
         print("No se pudo conectar al servidor de nombres. Ejecuta: python -m Pyro4.naming")
+        print(f"Detalle: {error}")
 
 if __name__ == "__main__":
     main()
