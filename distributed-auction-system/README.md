@@ -1,8 +1,8 @@
 # Subastas distribuidas en consola
 
-La sala permite conectar varios participantes, preparar productos y realizar
-subastas consecutivas sin reiniciar el servidor. El primer participante es el
-anfitrión; si sale, el siguiente participante ocupa su lugar.
+El operador configura los productos desde la consola del servidor y realiza
+subastas consecutivas sin reiniciarlo. Los clientes se conectan a la sala para
+ofertar, consultar el estado y salir; ninguno administra la subasta.
 
 ## Preparación
 
@@ -13,8 +13,9 @@ python -m pip install -r distributed-auction-system\requirements.txt
 ```
 
 Ejecuta el cliente en PowerShell o Windows Terminal. `prompt_toolkit` conserva
-lo que estás escribiendo cuando llegan notificaciones. El servidor y los clientes
-deben utilizar los archivos actualizados.
+lo que estás escribiendo cuando llegan notificaciones. Copia los archivos
+actualizados a cada equipo, incluyendo `consola.py`, compartido por servidor
+y cliente.
 
 ## Ejecución local
 
@@ -33,23 +34,30 @@ python distributed-auction-system\cliente.py
 ```
 
 Repite el último comando para conectar más participantes. La sala empieza vacía:
-el tiempo no corre hasta que el anfitrión usa `iniciar`.
+el tiempo no corre hasta que el operador usa `iniciar` en el servidor.
 
 ## Uso de la sala
 
-1. Cada participante ingresa un nombre diferente.
-2. El anfitrión escribe `preparar` y completa producto, precio base y duración
-   en segundos. Todos ven el producto preparado.
-3. Cuando estén listos, el anfitrión escribe `iniciar`.
-4. Los participantes escriben montos, por ejemplo `150`. Solo se acepta una
-   oferta superior al precio actual y dentro del plazo.
-5. Al terminar se anuncia el ganador, o que no hubo ofertas. El anfitrión puede
-   usar `preparar` para otro producto y luego `iniciar`.
-6. Cualquier participante puede escribir `salir` o usar Ctrl+C para desconectarse.
-   Su nombre se retira de la sala y los demás pueden continuar.
+1. En la terminal de `servidor.py`, el operador escribe `preparar` y completa
+   producto, precio base y duración en segundos.
+2. Los participantes ejecutan `cliente.py` e ingresan nombres diferentes.
+   Todos ven el producto preparado en la sala de espera.
+3. Cuando estén listos, el operador escribe `iniciar` en el servidor.
+4. Los clientes escriben montos, por ejemplo `150`. Solo se acepta una oferta
+   superior al precio actual y dentro del plazo.
+5. Al terminar se anuncia el ganador, o que no hubo ofertas. El operador puede
+   usar `preparar` para otro producto y luego `iniciar`, desde el servidor.
+6. Cada cliente puede escribir `salir` o usar Ctrl+C para desconectarse.
+   Su nombre se retira de la sala y los demás continúan.
 
-`estado` consulta participantes, producto y plazo restante. `ayuda` muestra
-los comandos. Salir no retira una oferta aceptada ni cierra el servidor.
+En el cliente, `estado` consulta participantes, producto y plazo restante;
+`ayuda` muestra los comandos. `salir` no retira una oferta aceptada ni cierra
+el servidor. No hay anfitriones ni permisos de administración para clientes.
+
+En el servidor, los comandos son `preparar`, `iniciar`, `estado`, `ayuda` y
+`salir`. Este último, o Ctrl+C, cierra el servicio. Su consola sigue atendiendo
+ofertas mientras el operador escribe. Los métodos de preparación e inicio son
+privados y Pyro4 rechaza cualquier intento de invocarlos desde un cliente.
 
 Las actualizaciones llegan por polling cada 0.25 segundos, se muestran encima
 del campo de entrada y no repiten la confirmación de tu propia oferta. Las

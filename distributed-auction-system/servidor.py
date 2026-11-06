@@ -1,7 +1,13 @@
 from math import isfinite
-from threading import Lock
+from threading import Event, Lock, Thread
 from time import monotonic
+
 import Pyro4
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
+
+from consola import mostrar_estado
+
 
 def validar_numero_positivo(valor, nombre):
     if type(valor) not in (int, float):
@@ -24,7 +30,6 @@ class Subasta:
         self.fin = None
         self.mejor_postor = None
         self.clientes = []
-        self.anfitrion = None
         self.fase = "espera"
         self.numero_subasta = 0
         self.version = 0
@@ -38,8 +43,6 @@ class Subasta:
             if nombre in self.clientes:
                 raise ValueError("Ese nombre ya está conectado. Utiliza otro nombre.")
             self.clientes.append(nombre)
-            if self.anfitrion is None:
-                self.anfitrion = nombre
             self.version += 1
             return self._obtener_estado()
 
@@ -62,23 +65,17 @@ class Subasta:
             "mejor_postor": self.mejor_postor,
             "tiempo_restante": tiempo_restante,
             "duracion": self.duracion,
-            "anfitrion": self.anfitrion,
             "clientes": list(self.clientes),
             "finalizada": self.fase == "finalizada",
         }
 
-    def _validar_anfitrion(self, nombre):
-        self._validar_cliente(nombre)
-        if nombre != self.anfitrion:
-            raise ValueError("Solo el anfitrión puede preparar e iniciar una subasta.")
-
-    def preparar_subasta(self, nombre, producto, precio_base, duracion):
+    # Los métodos privados no se exponen por Pyro4: solo los usa el operador local.
+    def _preparar_subasta(self, producto, precio_base, duracion):
         if not isinstance(producto, str) or not producto.strip():
             raise ValueError("Ingresa el nombre del producto.")
         precio_base = validar_numero_positivo(precio_base, "El precio base")
         duracion = validar_numero_positivo(duracion, "La duración")
         with self.bloqueo:
-            self._validar_anfitrion(nombre)
             self._obtener_estado()
             if self.fase == "en_curso":
                 raise RuntimeError("Espera a que termine la subasta actual.")
@@ -92,23 +89,24 @@ class Subasta:
             self.version += 1
             return self._obtener_estado()
 
-    def iniciar_subasta(self, nombre):
+    def _iniciar_subasta(self):
         with self.bloqueo:
-            self._validar_anfitrion(nombre)
             if self.fase != "preparada":
                 raise RuntimeError("Primero prepara un producto para subastar.")
-            # El plazo empieza al iniciar, después de que entren los participantes.
+            # Solo el operador del servidor decide cuándo comienza el plazo.
             self.fin = monotonic() + self.duracion
             self.fase = "en_curso"
             self.version += 1
+            return self._obtener_estado()
+
+    def _consultar_sala(self):
+        with self.bloqueo:
             return self._obtener_estado()
 
     def salir_cliente(self, nombre):
         with self.bloqueo:
             self._validar_cliente(nombre)
             self.clientes.remove(nombre)
-            if nombre == self.anfitrion:
-                self.anfitrion = self.clientes[0] if self.clientes else None
             self.version += 1
             return self._obtener_estado()
 
@@ -137,21 +135,81 @@ class Subasta:
             return self._obtener_estado()
 
 
-def main():
+def notificar_cambios(subasta, detener):
+    version = -1
+    while not detener.wait(0.25):
+        estado = subasta._consultar_sala()
+        if estado["version"] != version:
+            mostrar_estado(estado)
+            version = estado["version"]
+
+
+def administrar_subastas(subasta):
+    sesion = PromptSession()
+    detener = Event()
+    hilo = Thread(target=notificar_cambios, args=(subasta, detener), daemon=True)
+    hilo.start()
+    print("Comandos del servidor: preparar, iniciar, estado, ayuda, salir.")
     try:
-        with Pyro4.Daemon() as servidor, Pyro4.locateNS(
-            host=Pyro4.config.NS_HOST, port=Pyro4.config.NS_PORT
-        ) as registro:
-            # Una sola instancia comparte el estado entre todos los clientes.
-            subasta = Subasta()
-            uri = servidor.register(subasta)
-            registro.register("subastas.central", uri)
-            print(f"Dirección del servicio: {uri}", flush=True)
-            print("Sala de espera lista: subastas.central. El primer cliente será el anfitrión.", flush=True)
-            servidor.requestLoop()
-    except (Pyro4.errors.NamingError, Pyro4.errors.CommunicationError) as error:
-        print("No se pudo conectar al servidor de nombres. Ejecuta: python -m Pyro4.naming")
-        print(f"Detalle: {error}")
+        while True:
+            comando = sesion.prompt("Servidor > ").strip().lower()
+            if comando == "salir":
+                break
+            try:
+                if comando == "preparar":
+                    producto = sesion.prompt("Producto a subastar: ").strip()
+                    precio = float(sesion.prompt("Precio base: "))
+                    duracion = float(sesion.prompt("Duración en segundos: "))
+                    subasta._preparar_subasta(producto, precio, duracion)
+                    print("Producto preparado. Escribe 'iniciar' cuando estén listos.")
+                elif comando == "iniciar":
+                    subasta._iniciar_subasta()
+                elif comando == "estado":
+                    mostrar_estado(subasta._consultar_sala())
+                elif comando == "ayuda":
+                    print("preparar: ingresar producto, precio base y duración en segundos.")
+                    print("iniciar: comenzar la subasta preparada. estado: consultar la sala.")
+                    print("salir: cerrar el servidor. Los clientes solo pueden ofertar y salir.")
+                elif comando:
+                    print("Comando inválido. Escribe 'ayuda'.")
+            except (ValueError, RuntimeError) as error:
+                print(f"No se pudo realizar la operación: {error}")
+    finally:
+        detener.set()
+        hilo.join(timeout=1)
+
+
+def main():
+    with patch_stdout():
+        try:
+            with Pyro4.Daemon() as servidor, Pyro4.locateNS(
+                host=Pyro4.config.NS_HOST, port=Pyro4.config.NS_PORT
+            ) as registro:
+                subasta = Subasta()
+                uri = servidor.register(subasta)
+                registro.register("subastas.central", uri)
+                print(f"Dirección del servicio: {uri}")
+                print("Sala de espera lista. Configura los productos desde esta consola.")
+                # Atender clientes mientras el operador utiliza la consola local.
+                hilo = Thread(target=servidor.requestLoop, daemon=True)
+                hilo.start()
+                try:
+                    administrar_subastas(subasta)
+                finally:
+                    servidor.shutdown()
+                    hilo.join(timeout=3)
+                    try:
+                        # Renovar la conexión si estuvo inactiva durante las subastas.
+                        registro._pyroRelease()
+                        if registro.lookup("subastas.central") == uri:
+                            registro.remove("subastas.central")
+                    except Pyro4.errors.PyroError:
+                        pass
+        except (Pyro4.errors.NamingError, Pyro4.errors.CommunicationError) as error:
+            print("No se pudo conectar al servidor de nombres. Ejecuta: python -m Pyro4.naming")
+            print(f"Detalle: {error}")
+        except (EOFError, KeyboardInterrupt):
+            print("\nServidor cerrado.")
 
 if __name__ == "__main__":
     main()

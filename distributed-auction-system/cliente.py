@@ -4,28 +4,7 @@ import Pyro4
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 
-
-def mostrar_estado(estado):
-    titulos = {
-        "espera": "Sala de espera",
-        "preparada": "Subasta preparada",
-        "en_curso": "Subasta en curso",
-        "finalizada": "Subasta finalizada",
-    }
-    print(f"\n--- {titulos[estado['fase']]} ---")
-    print(f"Participantes: {', '.join(estado['clientes'])} | Anfitrión: {estado['anfitrion']}")
-    if estado["fase"] != "espera":
-        print(f"Producto: {estado['producto']} | Precio: ${estado['precio_actual']:.2f}")
-    if estado["fase"] == "preparada":
-        print(f"Duración: {estado['duracion']:g} segundos. Esperando que el anfitrión inicie.")
-    elif estado["fase"] == "en_curso":
-        print(
-            f"Mejor postor: {estado['mejor_postor'] or 'Sin ofertas'}"
-            f" | Tiempo restante: {estado['tiempo_restante']:.1f} s"
-        )
-    elif estado["finalizada"]:
-        print(f"Ganador: {estado['mejor_postor'] or 'Sin ofertas'}.")
-        print("Puedes salir o esperar a que el anfitrión prepare otro producto.")
+from consola import mostrar_estado
 
 
 class ClienteSubasta:
@@ -62,7 +41,7 @@ class ClienteSubasta:
                 and estado["mejor_postor"] == self.nombre
                 and all(
                     estado[campo] == anterior[campo]
-                    for campo in ("fase", "numero_subasta", "clientes", "anfitrion")
+                    for campo in ("fase", "numero_subasta", "clientes")
                 )
             )
             if not solo_oferta_propia:
@@ -82,13 +61,14 @@ class ClienteSubasta:
 
     def ejecutar(self):
         mostrar_estado(self.estado)
-        print("Comandos: preparar, iniciar, estado, ayuda, salir. Para ofertar, escribe el monto.")
+        print("El servidor configura e inicia las subastas.")
+        print("Escribe un monto para ofertar. Comandos: estado, ayuda, salir.")
         hilo = Thread(target=self.consultar_cambios, daemon=True)
         self.sesion.default_buffer.on_text_changed += self.capturar_subasta
         hilo.start()
         try:
             while not self.detener.is_set():
-                entrada = self.sesion.prompt("Oferta o comando > ").strip()
+                entrada = self.sesion.prompt("Ingrese su oferta o escriba 'salir' para terminar: ").strip()
                 if entrada.lower() == "salir" or self.detener.is_set():
                     break
                 if not entrada:
@@ -104,29 +84,18 @@ class ClienteSubasta:
 
     def procesar_entrada(self, entrada, numero_subasta):
         comando = entrada.lower()
-        if comando == "preparar":
-            with self.bloqueo:
-                if self.estado["anfitrion"] != self.nombre:
-                    raise ValueError("Solo el anfitrión puede preparar un producto.")
-            producto = self.sesion.prompt("Producto a subastar: ").strip()
-            precio = float(self.sesion.prompt("Precio base: "))
-            duracion = float(self.sesion.prompt("Duración en segundos: "))
-            self.actualizar_estado(
-                self.subasta.preparar_subasta(self.nombre, producto, precio, duracion)
-            )
-        elif comando == "iniciar":
-            self.actualizar_estado(self.subasta.iniciar_subasta(self.nombre))
-        elif comando == "estado":
+        if comando == "estado":
             estado = self.subasta.consultar_estado(self.nombre)
             with self.bloqueo:
                 if estado["version"] >= self.estado["version"]:
                     self.estado = estado
                 mostrar_estado(self.estado)
         elif comando == "ayuda":
-            print("preparar: el anfitrión ingresa producto, precio y duración.")
-            print("iniciar: el anfitrión comienza el plazo de la subasta preparada.")
+            print("El servidor decide el producto, el precio base y el tiempo.")
             print("estado: consultar la sala. salir: desconectarte sin detener el servidor.")
             print("Para ofertar escribe un número mayor al precio actual, por ejemplo: 150.")
+        elif comando in ("preparar", "iniciar"):
+            raise ValueError("Solo el operador del servidor puede configurar e iniciar subastas.")
         else:
             try:
                 monto = float(entrada)
