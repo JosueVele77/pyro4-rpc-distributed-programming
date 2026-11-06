@@ -211,13 +211,3 @@ Telegram usa HTTPS.
 > 🚨 **Importante:** Pyro4 no cifra las credenciales por defecto: las pruebas
 > sin TLS deben limitarse a un entorno local controlado; para redes no confiables
 > se requiere configurar TLS también en Pyro4.
-
----
-
-<div align="center">
-
-### 👨‍💻 Hecho con ❤️ para Programación Distribuida y RPC
-
-**Python · Pyro4 · Telegram Bot API**
-
-</div>
