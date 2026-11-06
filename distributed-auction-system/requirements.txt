@@ -1,0 +1,2 @@
+Pyro4==4.82
+prompt_toolkit>=3.0.53,<4
