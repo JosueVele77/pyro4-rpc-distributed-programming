@@ -56,6 +56,7 @@ mfa-telegram-bot-pyro4/
 ├── ❗ excepciones.py     # Excepciones personalizadas para Pyro4
 ├── 🖥️ servidor.py        # Registro de usuarios y servidor Pyro4
 ├── 🤖 telegram_bot.py    # Cliente HTTPS de Telegram y consulta de chat_id
+├── 🧪 test_sistema.py    # Pruebas automáticas de todos los módulos
 ├── 📦 requirements.txt   # Dependencias (Pyro4==4.82)
 └── 🙈 .gitignore         # Excluye .telegram_token y archivos temporales
 ```
@@ -138,6 +139,37 @@ código en Telegram. Escríbelo completo, incluyendo ceros iniciales si los hay.
 Si es correcto, aparece `Acceso autorizado`. Puedes escribir `salir` para cancelar.
 
 > 💡 Para conectar otro cliente, abre otra terminal y repite el último comando.
+
+---
+
+## 🧪 Pruebas automáticas
+
+Desde la raíz del proyecto, con `.venv` activado y las dependencias instaladas:
+
+```powershell
+python mfa-telegram-bot-pyro4\test_sistema.py
+```
+
+El script usa `unittest`, incluido en Python, y muestra el resultado de cada prueba.
+Termina con `OK` si todas pasan y devuelve un código de salida distinto de cero si
+hay fallos.
+
+Comprueba usuarios y contraseñas, códigos MFA, expiración, reintentos, bloqueos,
+concurrencia, configuración del token, peticiones HTTP de Telegram, excepciones y
+los flujos de consola del cliente y del servidor. También prueba el cliente con
+RPC real y un Name Server temporal en `127.0.0.1`, usando puertos libres que se
+cierran al terminar.
+
+Las llamadas a Telegram se simulan y la configuración usa archivos temporales.
+No hace falta un token, acceso a Internet ni iniciar los servidores manualmente.
+Estas pruebas no comprueban la disponibilidad del servicio real de Telegram.
+
+Para ejecutar una sola prueba:
+
+```powershell
+cd mfa-telegram-bot-pyro4
+python -m unittest test_sistema.PruebasServicio.test_codigo_correcto_se_consume -v
+```
 
 ---
 
